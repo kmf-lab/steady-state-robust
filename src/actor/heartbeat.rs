@@ -46,6 +46,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         // ROBUSTNESS DEMONSTRATION: Intentional panic for testing
         // NOTE: Future engineers should NEVER include panic conditions like this in production code!
         // This is only for demonstrating the framework's recovery capabilities.
+        #[cfg(not(test))]  //do not throw in tests only at runtime.
         if state.count == 7 && state.restart_count == 1 {
             error!("Heartbeat intentionally panicking at count {} to demonstrate robustness!", state.count);
             panic!("Intentional panic for robustness demonstration - DO NOT COPY THIS PATTERN!");

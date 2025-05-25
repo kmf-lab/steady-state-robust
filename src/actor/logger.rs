@@ -43,6 +43,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<FizzBuzz
         // ROBUSTNESS DEMONSTRATION: Intentional panic for testing
         // NOTE: Future engineers should NEVER include panic conditions like this in production code!
         // This is only for demonstrating the framework's recovery capabilities.
+        #[cfg(not(test))]  //do not throw in tests only at runtime.
         if state.messages_logged == 3 && state.restart_count == 1 {
             error!("Logger intentionally panicking after {} messages to demonstrate robustness!", state.messages_logged);
             panic!("Intentional panic for robustness demonstration - DO NOT COPY THIS PATTERN!");

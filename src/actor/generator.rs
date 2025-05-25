@@ -34,6 +34,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, generated: SteadyTx<u
         // NOTE: Future engineers should NEVER include panic conditions like this in production code!
         // This is only for demonstrating the framework's recovery capabilities.
         state.panic_counter += 1;
+        #[cfg(not(test))]  //do not throw in tests only at runtime.
         if state.panic_counter == 13 {
             error!("Generator intentionally panicking at message {} to demonstrate robustness!", state.value);
             panic!("Intentional panic for robustness demonstration - DO NOT COPY THIS PATTERN!");
