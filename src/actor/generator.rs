@@ -26,7 +26,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, generated: SteadyTx<u
 
     info!("Generator starting with value: {}, messages_sent: {}", state.value, state.messages_sent);
 
-    while cmd.is_running(|| i!(generated.mark_closed())) {
+    while cmd.is_running(|| generated.mark_closed()) {
         // Wait for room in the channel
         await_for_all!(cmd.wait_vacant(&mut generated, 1));
 

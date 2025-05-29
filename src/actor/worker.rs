@@ -61,7 +61,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 
     while cmd.is_running(|| i!(heartbeat.is_closed_and_empty()) && i!(generator.is_closed_and_empty()) && i!(logger.mark_closed())) {
         // Wait for both inputs to have data
-        await_for_all!(cmd.wait_avail(&mut heartbeat, 1),
+        let clean = await_for_all!(cmd.wait_avail(&mut heartbeat, 1),
                        cmd.wait_avail(&mut generator, 1),
                        cmd.wait_vacant(&mut logger, 1));
 
@@ -75,7 +75,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         }
         // END ROBUSTNESS DEMONSTRATION
 
-        if cmd.try_take(&mut heartbeat).is_some() {
+        if cmd.try_take(&mut heartbeat).is_some() || !clean  {
 
             // Process all available generator values for this heartbeat
             let mut processed_values = Vec::new();
@@ -90,6 +90,8 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
             for value in processed_values.iter() {
                 let fizz_buzz_msg = FizzBuzzMessage::new(*value);
 
+                
+                //TODO: this wait for all is very wrong. 
                 // Wait for room in logger channel
                 await_for_all!(cmd.wait_vacant(&mut logger, 1));
 

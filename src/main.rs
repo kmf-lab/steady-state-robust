@@ -64,8 +64,15 @@ fn build_graph(graph: &mut Graph) {
             actor::logger::run(context, worker_rx.clone(), state.clone())
         }, &mut Threading::Spawn);
 }
-
+//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 //TODO: also must demo the DLQ when we pick up the same failure mesage multipel times !!!
+
+//TODO: also fix normal full run...
+// [2025-05-28 22:41:17.523662 -05:00] T[async-std/runtime] INFO [src\actor\logger.rs:61] Msg Fizz (Fizz total: 137)
+// [2025-05-28 22:41:17.525769 -05:00] T[async-std/runtime] ERROR [C:\Users\Getac\git\steady-state-stack\core\src\telemetry\setup.rs:245] #5 logger EXIT hard delay on actor status: scale 343 empty 0 of 64
+// assume metrics_collector has died and is not consuming messages
+// error: process didn't exit successfully: `target\debug\robust.exe` (exit code: 0xffffffff)
+
 
 #[cfg(test)]
 pub(crate) mod main_tests {

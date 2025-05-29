@@ -37,7 +37,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<FizzBuzz
 
     let mut rx = rx.lock().await;
 
-    while cmd.is_running(|| i!(rx.is_closed_and_empty())) {
+    while cmd.is_running(|| rx.is_closed_and_empty()) {
         await_for_all!(cmd.wait_avail(&mut rx, 1));
 
         // ROBUSTNESS DEMONSTRATION: Intentional panic for testing

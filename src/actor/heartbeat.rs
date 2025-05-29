@@ -38,7 +38,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
     let mut heartbeat_tx = heartbeat_tx.lock().await;
 
     //loop is_running until shutdown signal then we call the closure which closes our outgoing Tx
-    while cmd.is_running(|| i!(heartbeat_tx.mark_closed())) {
+    while cmd.is_running(|| heartbeat_tx.mark_closed()) {
         //await here until both conditions are met
         await_for_all!(cmd.wait_periodic(rate),
                        cmd.wait_vacant(&mut heartbeat_tx, 1));
