@@ -107,7 +107,7 @@ fn test_logger() -> Result<(), Box<dyn std::error::Error>> {
     graph.start();
     fizz_buzz_tx.testing_send_all(vec![FizzBuzzMessage::Fizz],true);
     sleep(Duration::from_millis(300));
-    graph.request_stop();
+    graph.request_shutdown();
     graph.block_until_stopped(Duration::from_secs(10000))?;
     assert_in_logs!(["Msg Fizz"]);
 

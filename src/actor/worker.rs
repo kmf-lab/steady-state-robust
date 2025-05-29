@@ -34,12 +34,8 @@ pub async fn run(context: SteadyContext
                  , generator: SteadyRx<u64>
                  , logger: SteadyTx<FizzBuzzMessage>
                  , state: SteadyState<WorkerState>) -> Result<(),Box<dyn Error>> {
-    let cmd = context.into_monitor([&heartbeat, &generator], [&logger]);
-    if cmd.use_internal_behavior {
-        internal_behavior(cmd, heartbeat, generator, logger, state).await
-    } else {
-        cmd.simulated_behavior(vec!(&logger)).await
-    }
+    //this is NOT on the edge of the graph so we do not want to simulate it as it will be tested by its simulated neighbors
+    internal_behavior( context.into_monitor([&heartbeat, &generator], [&logger]), heartbeat, generator, logger, state).await
 }
 
 async fn internal_behavior<C: SteadyCommander>(mut cmd: C
@@ -66,7 +62,8 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
     while cmd.is_running(|| i!(heartbeat.is_closed_and_empty()) && i!(generator.is_closed_and_empty()) && i!(logger.mark_closed())) {
         // Wait for both inputs to have data
         await_for_all!(cmd.wait_avail(&mut heartbeat, 1),
-                       cmd.wait_avail(&mut generator, 1));
+                       cmd.wait_avail(&mut generator, 1),
+                       cmd.wait_vacant(&mut logger, 1));
 
         // ROBUSTNESS DEMONSTRATION: Intentional panic for testing
         // NOTE: Future engineers should NEVER include panic conditions like this in production code!
@@ -78,9 +75,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         }
         // END ROBUSTNESS DEMONSTRATION
 
-        // Robust pattern: Peek at heartbeat, don't consume until we process everything
-        if let Some(heartbeat_value) = cmd.try_peek(&mut heartbeat) {
-            let heartbeat_val = *heartbeat_value;
+        if cmd.try_take(&mut heartbeat).is_some() {
 
             // Process all available generator values for this heartbeat
             let mut processed_values = Vec::new();
@@ -92,7 +87,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 
             // Now process each value and send to logger
             let mut successfully_sent = 0;
-            for (idx, value) in processed_values.iter().enumerate() {
+            for value in processed_values.iter() {
                 let fizz_buzz_msg = FizzBuzzMessage::new(*value);
 
                 // Wait for room in logger channel
@@ -123,7 +118,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
             if successfully_sent == processed_values.len() && !processed_values.is_empty() {
                 if let Some(_) = cmd.try_take(&mut heartbeat) {
                     state.heartbeats_processed += 1;
-                    trace!("Worker processed heartbeat: {}, total: {}", heartbeat_val, state.heartbeats_processed);
+                    trace!("Worker processed heartbeat total: {}", state.heartbeats_processed);
                 }
             }
         }
@@ -163,7 +158,7 @@ pub(crate) mod worker_tests {
 
         sleep(Duration::from_millis(100));
 
-        graph.request_stop();
+        graph.request_shutdown();
         graph.block_until_stopped(Duration::from_secs(1))?;
         assert_steady_rx_eq_take!(&logger_rx, [FizzBuzzMessage::FizzBuzz
                                               ,FizzBuzzMessage::Value(1)

@@ -63,7 +63,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 
                 if beats == state.count {
                     info!("Heartbeat completed {} beats, requesting graph stop", beats);
-                    cmd.request_graph_stop().await;
+                    cmd.request_shutdown().await;
                 }
             }
             SendOutcome::Blocked(_) => {
@@ -102,7 +102,7 @@ pub(crate) mod heartbeat_tests {
 
         graph.start();
         sleep(Duration::from_millis(1000 * 3));
-        graph.request_stop();
+        graph.request_shutdown();
         graph.block_until_stopped(Duration::from_secs(1))?;
         assert_steady_rx_eq_take!(&heartbeat_rx, vec!(0,1));
         Ok(())
