@@ -2,6 +2,9 @@ use std::thread::sleep;
 use steady_state::*;
 use crate::actor::worker::FizzBuzzMessage;
 
+/// LoggerState holds persistent state for the Logger actor.
+/// All fields are preserved across panics and restarts, ensuring
+/// that no data is lost and the logger can resume exactly where it left off.
 pub(crate) struct LoggerState {
     pub(crate) messages_logged: u64,
     pub(crate) fizz_count: u64,
@@ -11,7 +14,13 @@ pub(crate) struct LoggerState {
     pub(crate) restart_count: u64,
 }
 
-pub async fn run(context: SteadyContext, fizz_buzz_rx: SteadyRx<FizzBuzzMessage>, state: SteadyState<LoggerState>) -> Result<(),Box<dyn Error>> {
+/// Entry point for the Logger actor.
+/// Demonstrates robust, persistent state, peek-before-commit, and automatic restart.
+pub async fn run(
+    context: SteadyContext,
+    fizz_buzz_rx: SteadyRx<FizzBuzzMessage>,
+    state: SteadyState<LoggerState>,
+) -> Result<(), Box<dyn Error>> {
     let cmd = context.into_monitor([&fizz_buzz_rx], []);
     if cmd.use_internal_behavior {
         internal_behavior(cmd, fizz_buzz_rx, state).await
@@ -20,7 +29,14 @@ pub async fn run(context: SteadyContext, fizz_buzz_rx: SteadyRx<FizzBuzzMessage>
     }
 }
 
-async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<FizzBuzzMessage>, state: SteadyState<LoggerState>) -> Result<(),Box<dyn Error>> {
+/// Internal behavior for the Logger actor.
+/// Demonstrates robust message processing, showstopper detection, and intentional failure injection.
+/// The peek-before-commit pattern ensures that no message is lost or duplicated, even across panics.
+async fn internal_behavior<C: SteadyCommander>(
+    mut cmd: C,
+    rx: SteadyRx<FizzBuzzMessage>,
+    state: SteadyState<LoggerState>,
+) -> Result<(), Box<dyn Error>> {
     let mut state = state.lock(|| LoggerState {
         messages_logged: 0,
         fizz_count: 0,
@@ -31,26 +47,36 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<FizzBuzz
     }).await;
 
     state.restart_count += 1;
-    info!("Logger starting (restart #{}) with {} messages logged (F:{}, B:{}, FB:{}, V:{})", 
-          state.restart_count, state.messages_logged, state.fizz_count, state.buzz_count, 
-          state.fizzbuzz_count, state.value_count);
+    info!(
+        "Logger starting (restart #{}) with {} messages logged (F:{}, B:{}, FB:{}, V:{})",
+        state.restart_count, state.messages_logged, state.fizz_count, state.buzz_count,
+        state.fizzbuzz_count, state.value_count
+    );
 
     let mut rx = rx.lock().await;
 
     while cmd.is_running(|| rx.is_closed_and_empty()) {
         await_for_all!(cmd.wait_avail(&mut rx, 1));
 
-        // ROBUSTNESS DEMONSTRATION: Intentional panic for testing
-        // NOTE: Future engineers should NEVER include panic conditions like this in production code!
-        // This is only for demonstrating the framework's recovery capabilities.
-        #[cfg(not(test))]  //do not throw in tests only at runtime.
+        // --- Robustness Demonstration: Intentional Panic ---
+        #[cfg(not(test))]
         if state.messages_logged == 3 && state.restart_count == 1 {
-            error!("Logger intentionally panicking after {} messages to demonstrate robustness!", state.messages_logged);
+            error!(
+                "Logger intentionally panicking after {} messages to demonstrate robustness!",
+                state.messages_logged
+            );
             panic!("Intentional panic for robustness demonstration - DO NOT COPY THIS PATTERN!");
         }
-        // END ROBUSTNESS DEMONSTRATION
+        // --- End Robustness Demonstration ---
 
-        // Robust pattern: Peek at the message, process it, then advance
+        // Showstopper detection: if this message has been peeked N times, drop it and log.
+        if cmd.is_showstopper(&mut rx, 7) {
+            // This same peeked message caused us to panic 7 times in a row, so we drop it.
+            cmd.try_take(&mut rx).expect("internal error");
+            continue; // Back to top of loop
+        }
+
+        // Peek-before-commit: Only after successful processing do we advance the read position.
         if let Some(peeked_msg) = cmd.try_peek(&mut rx) {
             let msg = *peeked_msg;
 
@@ -78,14 +104,19 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<FizzBuzz
             let advanced = cmd.advance_read_index(&mut rx, 1);
             if advanced > 0 {
                 state.messages_logged += 1;
-                trace!("Logger advanced read position, total messages: {}", state.messages_logged);
+                trace!(
+                    "Logger advanced read position, total messages: {}",
+                    state.messages_logged
+                );
             }
         }
     }
 
-    info!("Logger shutting down. Total: {} (F:{}, B:{}, FB:{}, V:{})", 
-          state.messages_logged, state.fizz_count, state.buzz_count, 
-          state.fizzbuzz_count, state.value_count);
+    info!(
+        "Logger shutting down. Total: {} (F:{}, B:{}, FB:{}, V:{})",
+        state.messages_logged, state.fizz_count, state.buzz_count,
+        state.fizzbuzz_count, state.value_count
+    );
     Ok(())
 }
 
@@ -102,7 +133,7 @@ fn test_logger() -> Result<(), Box<dyn std::error::Error>> {
         .build(move |context| {
             internal_behavior(context, fizz_buzz_rx.clone(), state.clone())
         }
-               , &mut Threading::Spawn);
+               , SoloAct);
 
     graph.start();
     fizz_buzz_tx.testing_send_all(vec![FizzBuzzMessage::Fizz],true);

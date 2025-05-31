@@ -1,14 +1,24 @@
 use steady_state::*;
 
-/// by keeping the count in steady state this will not be lost or reset if this actor should panic
+/// HeartbeatState holds persistent state for the Heartbeat actor.
+/// All fields are preserved across panics and restarts, ensuring
+/// that timing and beat counts are never lost.
 pub(crate) struct HeartbeatState {
+    /// The current beat count.
     pub(crate) count: u64,
+    /// The total number of beats sent.
     pub(crate) beats_sent: u64,
-    pub(crate) restart_count: u64,  // Track how many times we've restarted
+    /// Number of times this actor has restarted (for robustness tracking).
+    pub(crate) restart_count: u64,
 }
 
-/// this is the normal entry point for our actor in the graph using its normal implementation
-pub async fn run(context: SteadyContext, heartbeat_tx: SteadyTx<u64>, state: SteadyState<HeartbeatState>) -> Result<(),Box<dyn Error>> {
+/// Entry point for the Heartbeat actor.
+/// Demonstrates robust timing, persistent state, and automatic restart.
+pub async fn run(
+    context: SteadyContext,
+    heartbeat_tx: SteadyTx<u64>,
+    state: SteadyState<HeartbeatState>,
+) -> Result<(), Box<dyn Error>> {
     let cmd = context.into_monitor([], [&heartbeat_tx]);
     if cmd.use_internal_behavior {
         internal_behavior(cmd, heartbeat_tx, state).await
@@ -17,43 +27,52 @@ pub async fn run(context: SteadyContext, heartbeat_tx: SteadyTx<u64>, state: Ste
     }
 }
 
-async fn internal_behavior<C: SteadyCommander>(mut cmd: C
-                                               , heartbeat_tx: SteadyTx<u64>
-                                               , state: SteadyState<HeartbeatState> ) -> Result<(),Box<dyn Error>> {
+/// Internal behavior for the Heartbeat actor.
+/// Demonstrates robust periodic signaling and intentional failure injection.
+/// State is always updated only after a successful send.
+async fn internal_behavior<C: SteadyCommander>(
+    mut cmd: C,
+    heartbeat_tx: SteadyTx<u64>,
+    state: SteadyState<HeartbeatState>,
+) -> Result<(), Box<dyn Error>> {
     let args = cmd.args::<crate::MainArg>().expect("unable to downcast");
     let rate = Duration::from_millis(args.rate_ms);
     let beats = args.beats;
 
-    let mut state = state.lock(|| HeartbeatState{
+    let mut state = state.lock(|| HeartbeatState {
         count: 0,
         beats_sent: 0,
         restart_count: 0,
     }).await;
 
-    // Increment restart count to track actor resilience
+    // Track restarts for resilience metrics.
     state.restart_count += 1;
-    info!("Heartbeat starting (restart #{}) with count: {}, beats_sent: {}", 
-          state.restart_count, state.count, state.beats_sent);
+    info!(
+        "Heartbeat starting (restart #{}) with count: {}, beats_sent: {}",
+        state.restart_count, state.count, state.beats_sent
+    );
 
     let mut heartbeat_tx = heartbeat_tx.lock().await;
 
-    //loop is_running until shutdown signal then we call the closure which closes our outgoing Tx
     while cmd.is_running(|| heartbeat_tx.mark_closed()) {
-        //await here until both conditions are met
-        await_for_all!(cmd.wait_periodic(rate),
-                       cmd.wait_vacant(&mut heartbeat_tx, 1));
+        // Wait for both the periodic timer and channel space.
+        await_for_all!(
+            cmd.wait_periodic(rate),
+            cmd.wait_vacant(&mut heartbeat_tx, 1)
+        );
 
-        // ROBUSTNESS DEMONSTRATION: Intentional panic for testing
-        // NOTE: Future engineers should NEVER include panic conditions like this in production code!
-        // This is only for demonstrating the framework's recovery capabilities.
-        #[cfg(not(test))]  //do not throw in tests only at runtime.
+        // --- Robustness Demonstration: Intentional Panic ---
+        #[cfg(not(test))]
         if state.count == 7 && state.restart_count == 1 {
-            error!("Heartbeat intentionally panicking at count {} to demonstrate robustness!", state.count);
+            error!(
+                "Heartbeat intentionally panicking at count {} to demonstrate robustness!",
+                state.count
+            );
             panic!("Intentional panic for robustness demonstration - DO NOT COPY THIS PATTERN!");
         }
-        // END ROBUSTNESS DEMONSTRATION
+        // --- End Robustness Demonstration ---
 
-        // Robust pattern: Prepare the beat value, attempt to send, then update state only on success
+        // Prepare the beat value, attempt to send, then update state only on success.
         let beat_value = state.count;
         match cmd.try_send(&mut heartbeat_tx, beat_value) {
             SendOutcome::Success => {
@@ -67,17 +86,19 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                 }
             }
             SendOutcome::Blocked(_) => {
-                // Channel is full, continue to next iteration to wait for space
+                // Channel is full, try again next loop.
                 continue;
             }
         }
     }
 
-    info!("Heartbeat shutting down. Final count: {}, total beats sent: {}", state.count, state.beats_sent);
+    info!(
+        "Heartbeat shutting down. Final count: {}, total beats sent: {}",
+        state.count, state.beats_sent
+    );
     Ok(())
 }
 
-/// Here we test the internal behavior of this actor
 #[cfg(test)]
 pub(crate) mod heartbeat_tests {
     pub use std::thread::sleep;
@@ -96,9 +117,9 @@ pub(crate) mod heartbeat_tests {
         let state = new_state();
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn(move |context|
-                internal_behavior(context, heartbeat_tx.clone(), state.clone())
-            );
+            .build(move |context|
+                       internal_behavior(context, heartbeat_tx.clone(), state.clone())
+                   , SoloAct);
 
         graph.start();
         sleep(Duration::from_millis(1000 * 3));

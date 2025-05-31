@@ -1,14 +1,15 @@
 use steady_state::*;
 
-// over designed this enum is. much to learn here we have.
+/// FizzBuzzMessage is a compact enum for FizzBuzz logic.
+/// The #[repr(u64)] ensures all variants fit in 8 bytes for efficient channel transport.
 #[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
-#[repr(u64)] // Pack everything into 8 bytes
+#[repr(u64)]
 pub(crate) enum FizzBuzzMessage {
     #[default]
-    FizzBuzz = 15,         // Discriminant is 15 - could have been any valid FizzBuzz
-    Fizz = 3,              // Discriminant is 3 - could have been any valid Fizz
-    Buzz = 5,              // Discriminant is 5 - could have been any valid Buzz
-    Value(u64),            // Store u64 directly, use the fact that FizzBuzz/Fizz/Buzz only occupy small values
+    FizzBuzz = 15,         // Discriminant is 15 - for multiples of 15
+    Fizz = 3,              // Discriminant is 3 - for multiples of 3 (not 5)
+    Buzz = 5,              // Discriminant is 5 - for multiples of 5 (not 3)
+    Value(u64),            // For all other values
 }
 
 impl FizzBuzzMessage {
@@ -22,6 +23,9 @@ impl FizzBuzzMessage {
     }
 }
 
+/// WorkerState holds persistent state for the Worker actor.
+/// All fields are preserved across panics and restarts, ensuring
+/// that no data is lost and the worker can resume exactly where it left off.
 pub(crate) struct WorkerState {
     pub(crate) heartbeats_processed: u64,
     pub(crate) values_processed: u64,
@@ -29,21 +33,35 @@ pub(crate) struct WorkerState {
     pub(crate) restart_count: u64,
 }
 
-pub async fn run(context: SteadyContext
-                 , heartbeat: SteadyRx<u64>
-                 , generator: SteadyRx<u64>
-                 , logger: SteadyTx<FizzBuzzMessage>
-                 , state: SteadyState<WorkerState>) -> Result<(),Box<dyn Error>> {
-    //this is NOT on the edge of the graph so we do not want to simulate it as it will be tested by its simulated neighbors
-    internal_behavior( context.into_monitor([&heartbeat, &generator], [&logger]), heartbeat, generator, logger, state).await
+/// Entry point for the Worker actor.
+/// Demonstrates robust, persistent state, peek-before-commit, and automatic restart.
+pub async fn run(
+    context: SteadyContext,
+    heartbeat: SteadyRx<u64>,
+    generator: SteadyRx<u64>,
+    logger: SteadyTx<FizzBuzzMessage>,
+    state: SteadyState<WorkerState>,
+) -> Result<(), Box<dyn Error>> {
+    internal_behavior(
+        context.into_monitor([&heartbeat, &generator], [&logger]),
+        heartbeat,
+        generator,
+        logger,
+        state,
+    )
+        .await
 }
 
-async fn internal_behavior<C: SteadyCommander>(mut cmd: C
-                                               , heartbeat: SteadyRx<u64>
-                                               , generator: SteadyRx<u64>
-                                               , logger: SteadyTx<FizzBuzzMessage>
-                                               , state: SteadyState<WorkerState>) -> Result<(),Box<dyn Error>> {
-
+/// Internal behavior for the Worker actor.
+/// Demonstrates robust message processing, showstopper detection, and intentional failure injection.
+/// The peek-before-commit pattern ensures that no message is lost or duplicated, even across panics.
+async fn internal_behavior<C: SteadyCommander>(
+    mut cmd: C,
+    heartbeat: SteadyRx<u64>,
+    generator: SteadyRx<u64>,
+    logger: SteadyTx<FizzBuzzMessage>,
+    state: SteadyState<WorkerState>,
+) -> Result<(), Box<dyn Error>> {
     let mut state = state.lock(|| WorkerState {
         heartbeats_processed: 0,
         values_processed: 0,
@@ -52,82 +70,92 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
     }).await;
 
     state.restart_count += 1;
-    info!("Worker starting (restart #{}) with heartbeats: {}, values: {}, messages: {}", 
-          state.restart_count, state.heartbeats_processed, state.values_processed, state.messages_sent);
+    info!(
+        "Worker starting (restart #{}) with heartbeats: {}, values: {}, messages: {}",
+        state.restart_count, state.heartbeats_processed, state.values_processed, state.messages_sent
+    );
 
     let mut heartbeat = heartbeat.lock().await;
     let mut generator = generator.lock().await;
     let mut logger = logger.lock().await;
 
-    while cmd.is_running(|| i!(heartbeat.is_closed_and_empty()) && i!(generator.is_closed_and_empty()) && i!(logger.mark_closed())) {
-        // Wait for both inputs to have data
-        let clean = await_for_all!(cmd.wait_avail(&mut heartbeat, 1),
-                       cmd.wait_avail(&mut generator, 1),
-                       cmd.wait_vacant(&mut logger, 1));
+    while cmd.is_running(|| {
+        i!(heartbeat.is_closed_and_empty())
+            && i!(generator.is_closed_and_empty())
+            && i!(logger.mark_closed())
+    }) {
+        // Wait for both inputs to have data and logger to have space
+        let clean = await_for_all!(
+            cmd.wait_avail(&mut heartbeat, 1),
+            cmd.wait_avail(&mut generator, 1),
+            cmd.wait_vacant(&mut logger, 1)
+        );
 
-        // ROBUSTNESS DEMONSTRATION: Intentional panic for testing
-        // NOTE: Future engineers should NEVER include panic conditions like this in production code!
-        // This is only for demonstrating the framework's recovery capabilities.
-        #[cfg(not(test))]  //do not throw in tests only at runtime.
+        // --- Robustness Demonstration: Intentional Panic ---
+        // This panic is injected to demonstrate automatic actor restart and state preservation.
+        #[cfg(not(test))]
         if state.heartbeats_processed == 5 && state.restart_count == 1 {
-            error!("Worker intentionally panicking after {} heartbeats to demonstrate robustness!", state.heartbeats_processed);
+            error!(
+                "Worker intentionally panicking after {} heartbeats to demonstrate robustness!",
+                state.heartbeats_processed
+            );
             panic!("Intentional panic for robustness demonstration - DO NOT COPY THIS PATTERN!");
         }
-        // END ROBUSTNESS DEMONSTRATION
+        // --- End Robustness Demonstration ---
 
-        if cmd.try_take(&mut heartbeat).is_some() || !clean  {
+        // Only proceed if we have a heartbeat or if not all conditions were met (to avoid starvation)
+        if cmd.try_take(&mut heartbeat).is_some() || !clean {
+            // Peek at the next generator value (do not take yet)
+            if let Some(&value) = cmd.try_peek(&mut generator) {
+                // Showstopper detection: if this value has been peeked N times, drop it and log.
+                const SHOWSTOPPER_THRESHOLD: usize = 7;
+                if cmd.is_showstopper(&mut generator, SHOWSTOPPER_THRESHOLD) {
+                    warn!(
+                        "Showstopper detected: value {} has blocked the worker {} times, dropping it.",
+                        value, SHOWSTOPPER_THRESHOLD
+                    );
+                    // Drop the message by taking it (removing from channel)
+                    let _ = cmd.try_take(&mut generator);
+                    state.values_processed += 1;
+                    continue; // Skip processing, go to next iteration
+                }
 
-            // Process all available generator values for this heartbeat
-            let mut processed_values = Vec::new();
-
-            // Peek at all available generator values
-            for generator_value in cmd.try_peek_iter(&mut generator) {
-                processed_values.push(*generator_value);
-            }
-
-            // Now process each value and send to logger
-            let mut successfully_sent = 0;
-            for value in processed_values.iter() {
-                let fizz_buzz_msg = FizzBuzzMessage::new(*value);
-
-                
-                //TODO: this wait for all is very wrong. 
-                // Wait for room in logger channel
-                await_for_all!(cmd.wait_vacant(&mut logger, 1));
-
+                // Process the value and send to logger
+                let fizz_buzz_msg = FizzBuzzMessage::new(value);
                 match cmd.try_send(&mut logger, fizz_buzz_msg) {
                     SendOutcome::Success => {
-                        successfully_sent += 1;
+                        // Only now do we take the value from the generator
+                        let _ = cmd.try_take(&mut generator);
+                        state.values_processed += 1;
                         state.messages_sent += 1;
-                        trace!("Worker sent FizzBuzz message for value: {} -> {:?}", value, fizz_buzz_msg);
+                        trace!(
+                            "Worker sent FizzBuzz message for value: {} -> {:?}",
+                            value,
+                            fizz_buzz_msg
+                        );
                     }
                     SendOutcome::Blocked(_) => {
-                        // If we can't send, break and try again later
+                        // If we can't send, try again later
                         warn!("Worker logger channel blocked, will retry");
-                        break;
+                        // Do not take the value, so we will try again next loop
+                        continue;
                     }
                 }
             }
 
-            // Only advance generator position for successfully processed messages
-            if successfully_sent > 0 {
-                let advanced = cmd.advance_read_index(&mut generator, successfully_sent);
-                state.values_processed += advanced as u64;
-                trace!("Worker advanced generator by {} positions", advanced);
-            }
-
-            // If we processed all available generator values, consume the heartbeat
-            if successfully_sent == processed_values.len() && !processed_values.is_empty() {
-                if let Some(_) = cmd.try_take(&mut heartbeat) {
-                    state.heartbeats_processed += 1;
-                    trace!("Worker processed heartbeat total: {}", state.heartbeats_processed);
-                }
-            }
+            // Always advance heartbeat count if we processed a value or dropped a showstopper
+            state.heartbeats_processed += 1;
+            trace!(
+                "Worker processed heartbeat total: {}",
+                state.heartbeats_processed
+            );
         }
     }
 
-    info!("Worker shutting down. Heartbeats: {}, Values: {}, Messages: {}", 
-          state.heartbeats_processed, state.values_processed, state.messages_sent);
+    info!(
+        "Worker shutting down. Heartbeats: {}, Values: {}, Messages: {}",
+        state.heartbeats_processed, state.values_processed, state.messages_sent
+    );
     Ok(())
 }
 
@@ -151,7 +179,7 @@ pub(crate) mod worker_tests {
                                                     , generate_rx.clone()
                                                     , logger_tx.clone()
                                                     , state.clone())
-                   , &mut Threading::Spawn
+                   , SoloAct
             );
 
         generate_tx.testing_send_all(vec![0,1,2,3,4,5], true);
