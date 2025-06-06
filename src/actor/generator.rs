@@ -15,23 +15,23 @@ pub(crate) struct GeneratorState {
 /// Entry point for the Generator actor.
 /// This actor demonstrates robust, persistent state and automatic restart.
 pub async fn run(
-    context: SteadyContext,
+    actor: SteadyActorShadow,
     generated_tx: SteadyTx<u64>,
     state: SteadyState<GeneratorState>,
 ) -> Result<(), Box<dyn Error>> {
-    let cmd = context.into_monitor([], [&generated_tx]);
-    if cmd.use_internal_behavior {
-        internal_behavior(cmd, generated_tx, state).await
+    let actor = actor.into_spotlight([], [&generated_tx]);
+    if actor.use_internal_behavior {
+        internal_behavior(actor, generated_tx, state).await
     } else {
-        cmd.simulated_behavior(vec!(&generated_tx)).await
+        actor.simulated_behavior(vec!(&generated_tx)).await
     }
 }
 
 /// Internal behavior for the Generator actor.
 /// Demonstrates the peek-before-commit pattern and intentional failure injection.
 /// State is always updated only after a successful send, ensuring no duplicate or lost messages.
-async fn internal_behavior<C: SteadyCommander>(
-    mut cmd: C,
+async fn internal_behavior<A: SteadyActor>(
+    mut actor: A,
     generated: SteadyTx<u64>,
     state: SteadyState<GeneratorState>,
 ) -> Result<(), Box<dyn Error>> {
@@ -48,9 +48,9 @@ async fn internal_behavior<C: SteadyCommander>(
         state.value, state.messages_sent
     );
 
-    while cmd.is_running(|| generated.mark_closed()) {
+    while actor.is_running(|| generated.mark_closed()) {
         // Wait for room in the channel before attempting to send.
-        await_for_all!(cmd.wait_vacant(&mut generated, 1));
+        await_for_all!(actor.wait_vacant(&mut generated, 1));
 
         // --- Robustness Demonstration: Intentional Panic ---
         // This panic is injected to demonstrate automatic actor restart and state preservation.
@@ -67,11 +67,11 @@ async fn internal_behavior<C: SteadyCommander>(
         // --- End Robustness Demonstration ---
 
         // Peek-before-commit: Only update state after a successful send.
-        if !cmd.is_full(&mut generated) {
+        if !actor.is_full(&mut generated) {
             let message_to_send = state.value;
 
             // Attempt to send the message.
-            match cmd.try_send(&mut generated, message_to_send) {
+            match actor.try_send(&mut generated, message_to_send) {
                 SendOutcome::Success => {
                     // Only after a successful send do we update state.
                     state.value += 1;

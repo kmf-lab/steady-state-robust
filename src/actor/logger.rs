@@ -17,23 +17,23 @@ pub(crate) struct LoggerState {
 /// Entry point for the Logger actor.
 /// Demonstrates robust, persistent state, peek-before-commit, and automatic restart.
 pub async fn run(
-    context: SteadyContext,
+    actor: SteadyActorShadow,
     fizz_buzz_rx: SteadyRx<FizzBuzzMessage>,
     state: SteadyState<LoggerState>,
 ) -> Result<(), Box<dyn Error>> {
-    let cmd = context.into_monitor([&fizz_buzz_rx], []);
-    if cmd.use_internal_behavior {
-        internal_behavior(cmd, fizz_buzz_rx, state).await
+    let actor = actor.into_spotlight([&fizz_buzz_rx], []);
+    if actor.use_internal_behavior {
+        internal_behavior(actor, fizz_buzz_rx, state).await
     } else {
-        cmd.simulated_behavior(vec!(&fizz_buzz_rx)).await
+        actor.simulated_behavior(vec!(&fizz_buzz_rx)).await
     }
 }
 
 /// Internal behavior for the Logger actor.
 /// Demonstrates robust message processing, showstopper detection, and intentional failure injection.
 /// The peek-before-commit pattern ensures that no message is lost or duplicated, even across panics.
-async fn internal_behavior<C: SteadyCommander>(
-    mut cmd: C,
+async fn internal_behavior<A: SteadyActor>(
+    mut actor: A,
     rx: SteadyRx<FizzBuzzMessage>,
     state: SteadyState<LoggerState>,
 ) -> Result<(), Box<dyn Error>> {
@@ -55,8 +55,8 @@ async fn internal_behavior<C: SteadyCommander>(
 
     let mut rx = rx.lock().await;
 
-    while cmd.is_running(|| rx.is_closed_and_empty()) {
-        await_for_all!(cmd.wait_avail(&mut rx, 1));
+    while actor.is_running(|| rx.is_closed_and_empty()) {
+        await_for_all!(actor.wait_avail(&mut rx, 1));
 
         // --- Robustness Demonstration: Intentional Panic ---
         #[cfg(not(test))]
@@ -70,14 +70,14 @@ async fn internal_behavior<C: SteadyCommander>(
         // --- End Robustness Demonstration ---
 
         // Showstopper detection: if this message has been peeked N times, drop it and log.
-        if cmd.is_showstopper(&mut rx, 7) {
+        if actor.is_showstopper(&mut rx, 7) {
             // This same peeked message caused us to panic 7 times in a row, so we drop it.
-            cmd.try_take(&mut rx).expect("internal error");
+            actor.try_take(&mut rx).expect("internal error");
             continue; // Back to top of loop
         }
 
         // Peek-before-commit: Only after successful processing do we advance the read position.
-        if let Some(peeked_msg) = cmd.try_peek(&mut rx) {
+        if let Some(peeked_msg) = actor.try_peek(&mut rx) {
             let msg = *peeked_msg;
 
             // Process the message (this is our "work" that we don't want to lose)
@@ -101,7 +101,7 @@ async fn internal_behavior<C: SteadyCommander>(
             }
 
             // Only after successful processing do we advance the read position
-            let advanced = cmd.advance_read_index(&mut rx, 1);
+            let advanced = actor.advance_read_index(&mut rx, 1);
             if advanced > 0 {
                 state.messages_logged += 1;
                 trace!(

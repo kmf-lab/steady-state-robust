@@ -47,6 +47,7 @@ const NAME_LOGGER: &str = "logger";
 fn build_graph(graph: &mut Graph) {
     let channel_builder = graph.channel_builder();
 
+
     // Create channels for each stage of the pipeline.
     let (heartbeat_tx, heartbeat_rx) = channel_builder.build();
     let (generator_tx, generator_rx) = channel_builder.build();

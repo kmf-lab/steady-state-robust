@@ -36,14 +36,14 @@ pub(crate) struct WorkerState {
 /// Entry point for the Worker actor.
 /// Demonstrates robust, persistent state, peek-before-commit, and automatic restart.
 pub async fn run(
-    context: SteadyContext,
+    actor: SteadyActorShadow,
     heartbeat: SteadyRx<u64>,
     generator: SteadyRx<u64>,
     logger: SteadyTx<FizzBuzzMessage>,
     state: SteadyState<WorkerState>,
 ) -> Result<(), Box<dyn Error>> {
     internal_behavior(
-        context.into_monitor([&heartbeat, &generator], [&logger]),
+        actor.into_spotlight([&heartbeat, &generator], [&logger]),
         heartbeat,
         generator,
         logger,
@@ -55,8 +55,8 @@ pub async fn run(
 /// Internal behavior for the Worker actor.
 /// Demonstrates robust message processing, showstopper detection, and intentional failure injection.
 /// The peek-before-commit pattern ensures that no message is lost or duplicated, even across panics.
-async fn internal_behavior<C: SteadyCommander>(
-    mut cmd: C,
+async fn internal_behavior<A: SteadyActor>(
+    mut actor: A,
     heartbeat: SteadyRx<u64>,
     generator: SteadyRx<u64>,
     logger: SteadyTx<FizzBuzzMessage>,
@@ -79,16 +79,16 @@ async fn internal_behavior<C: SteadyCommander>(
     let mut generator = generator.lock().await;
     let mut logger = logger.lock().await;
 
-    while cmd.is_running(|| {
+    while actor.is_running(|| {
         i!(heartbeat.is_closed_and_empty())
             && i!(generator.is_closed_and_empty())
             && i!(logger.mark_closed())
     }) {
         // Wait for both inputs to have data and logger to have space
         let clean = await_for_all!(
-            cmd.wait_avail(&mut heartbeat, 1),
-            cmd.wait_avail(&mut generator, 1),
-            cmd.wait_vacant(&mut logger, 1)
+            actor.wait_avail(&mut heartbeat, 1),
+            actor.wait_avail(&mut generator, 1),
+            actor.wait_vacant(&mut logger, 1)
         );
 
         // --- Robustness Demonstration: Intentional Panic ---
@@ -104,28 +104,28 @@ async fn internal_behavior<C: SteadyCommander>(
         // --- End Robustness Demonstration ---
 
         // Only proceed if we have a heartbeat or if not all conditions were met (to avoid starvation)
-        if cmd.try_take(&mut heartbeat).is_some() || !clean {
+        if actor.try_take(&mut heartbeat).is_some() || !clean {
             // Peek at the next generator value (do not take yet)
-            if let Some(&value) = cmd.try_peek(&mut generator) {
+            if let Some(&value) = actor.try_peek(&mut generator) {
                 // Showstopper detection: if this value has been peeked N times, drop it and log.
                 const SHOWSTOPPER_THRESHOLD: usize = 7;
-                if cmd.is_showstopper(&mut generator, SHOWSTOPPER_THRESHOLD) {
+                if actor.is_showstopper(&mut generator, SHOWSTOPPER_THRESHOLD) {
                     warn!(
                         "Showstopper detected: value {} has blocked the worker {} times, dropping it.",
                         value, SHOWSTOPPER_THRESHOLD
                     );
                     // Drop the message by taking it (removing from channel)
-                    let _ = cmd.try_take(&mut generator);
+                    let _ = actor.try_take(&mut generator);
                     state.values_processed += 1;
                     continue; // Skip processing, go to next iteration
                 }
 
                 // Process the value and send to logger
                 let fizz_buzz_msg = FizzBuzzMessage::new(value);
-                match cmd.try_send(&mut logger, fizz_buzz_msg) {
+                match actor.try_send(&mut logger, fizz_buzz_msg) {
                     SendOutcome::Success => {
                         // Only now do we take the value from the generator
-                        let _ = cmd.try_take(&mut generator);
+                        let _ = actor.try_take(&mut generator);
                         state.values_processed += 1;
                         state.messages_sent += 1;
                         trace!(

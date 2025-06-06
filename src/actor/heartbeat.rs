@@ -15,27 +15,27 @@ pub(crate) struct HeartbeatState {
 /// Entry point for the Heartbeat actor.
 /// Demonstrates robust timing, persistent state, and automatic restart.
 pub async fn run(
-    context: SteadyContext,
+    actor: SteadyActorShadow,
     heartbeat_tx: SteadyTx<u64>,
     state: SteadyState<HeartbeatState>,
 ) -> Result<(), Box<dyn Error>> {
-    let cmd = context.into_monitor([], [&heartbeat_tx]);
-    if cmd.use_internal_behavior {
-        internal_behavior(cmd, heartbeat_tx, state).await
+    let actor = actor.into_spotlight([], [&heartbeat_tx]);
+    if actor.use_internal_behavior {
+        internal_behavior(actor, heartbeat_tx, state).await
     } else {
-        cmd.simulated_behavior(vec!(&heartbeat_tx)).await
+        actor.simulated_behavior(vec!(&heartbeat_tx)).await
     }
 }
 
 /// Internal behavior for the Heartbeat actor.
 /// Demonstrates robust periodic signaling and intentional failure injection.
 /// State is always updated only after a successful send.
-async fn internal_behavior<C: SteadyCommander>(
-    mut cmd: C,
+async fn internal_behavior<A: SteadyActor>(
+    mut actor: A,
     heartbeat_tx: SteadyTx<u64>,
     state: SteadyState<HeartbeatState>,
 ) -> Result<(), Box<dyn Error>> {
-    let args = cmd.args::<crate::MainArg>().expect("unable to downcast");
+    let args = actor.args::<crate::MainArg>().expect("unable to downcast");
     let rate = Duration::from_millis(args.rate_ms);
     let beats = args.beats;
 
@@ -54,11 +54,11 @@ async fn internal_behavior<C: SteadyCommander>(
 
     let mut heartbeat_tx = heartbeat_tx.lock().await;
 
-    while cmd.is_running(|| heartbeat_tx.mark_closed()) {
+    while actor.is_running(|| heartbeat_tx.mark_closed()) {
         // Wait for both the periodic timer and channel space.
         await_for_all!(
-            cmd.wait_periodic(rate),
-            cmd.wait_vacant(&mut heartbeat_tx, 1)
+            actor.wait_periodic(rate),
+            actor.wait_vacant(&mut heartbeat_tx, 1)
         );
 
         // --- Robustness Demonstration: Intentional Panic ---
@@ -74,7 +74,7 @@ async fn internal_behavior<C: SteadyCommander>(
 
         // Prepare the beat value, attempt to send, then update state only on success.
         let beat_value = state.count;
-        match cmd.try_send(&mut heartbeat_tx, beat_value) {
+        match actor.try_send(&mut heartbeat_tx, beat_value) {
             SendOutcome::Success => {
                 state.count += 1;
                 state.beats_sent += 1;
@@ -82,7 +82,7 @@ async fn internal_behavior<C: SteadyCommander>(
 
                 if beats == state.count {
                     info!("Heartbeat completed {} beats, requesting graph stop", beats);
-                    cmd.request_shutdown().await;
+                    actor.request_shutdown().await;
                 }
             }
             SendOutcome::Blocked(_) => {
