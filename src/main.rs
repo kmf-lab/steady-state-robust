@@ -54,7 +54,7 @@ fn build_graph(graph: &mut Graph) {
     let (worker_tx, worker_rx) = channel_builder.build();
 
     // Enable actor restarts for robustness.
-    // The .with_mcpu_avg() call enables automatic restart on panic and tracks CPU usage.
+    // The .with_mcpu_avg() call enables tracking of actor CPU usage.
     let actor_builder = graph.actor_builder()
         .with_mcpu_avg();
 
