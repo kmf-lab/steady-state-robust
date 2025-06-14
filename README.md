@@ -78,6 +78,10 @@ Heartbeat
 
 ## 🛠️ Try It Yourself
 
+#### Telemetry
+- Telemetry on http://127.0.0.1:9900  (human readable)
+- Telemetry on http://127.0.0.1:9900/graph.dot (graph file)
+
 ```bash
 # Run with default robust settings (1s heartbeat, 60 beats)
 cargo run
