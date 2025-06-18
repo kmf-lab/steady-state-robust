@@ -101,7 +101,7 @@ async fn internal_behavior<A: SteadyActor>(
             }
 
             // Only after successful processing do we advance the read position
-            let advanced = actor.advance_read_index(&mut rx, 1);
+            let advanced = actor.advance_read_index(&mut rx, 1).item_count();
             if advanced > 0 {
                 state.messages_logged += 1;
                 trace!(
