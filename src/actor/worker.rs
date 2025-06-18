@@ -91,6 +91,25 @@ async fn internal_behavior<A: SteadyActor>(
             actor.wait_vacant(&mut logger, 1)
         );
 
+        if clean {
+            // Showstopper detection: if this value has been peeked N times, drop it and log.
+            const SHOWSTOPPER_THRESHOLD: usize = 7;
+            if actor.is_showstopper(&mut heartbeat, SHOWSTOPPER_THRESHOLD) {
+                if let Some(value) = actor.try_take(&mut heartbeat) {
+                    warn!(
+                            "Showstopper detected: value {} has blocked the worker {} times, dropping it.",
+                            value, SHOWSTOPPER_THRESHOLD
+                        );
+                    state.values_processed += 1;
+                    continue; // Skip processing, go to the next iteration
+                } else {
+                    panic!("Showstopper detected, but heartbeat is empty!");
+                }
+
+            }
+
+        }
+
         // --- Robustness Demonstration: Intentional Panic ---
         // This panic is injected to demonstrate automatic actor restart and state preservation.
         #[cfg(not(test))]
@@ -107,18 +126,7 @@ async fn internal_behavior<A: SteadyActor>(
         if actor.try_take(&mut heartbeat).is_some() || !clean {
             // Peek at the next generator value (do not take yet)
             if let Some(&value) = actor.try_peek(&mut generator) {
-                // Showstopper detection: if this value has been peeked N times, drop it and log.
-                const SHOWSTOPPER_THRESHOLD: usize = 7;
-                if actor.is_showstopper(&mut generator, SHOWSTOPPER_THRESHOLD) {
-                    warn!(
-                        "Showstopper detected: value {} has blocked the worker {} times, dropping it.",
-                        value, SHOWSTOPPER_THRESHOLD
-                    );
-                    // Drop the message by taking it (removing from channel)
-                    let _ = actor.try_take(&mut generator);
-                    state.values_processed += 1;
-                    continue; // Skip processing, go to next iteration
-                }
+
 
                 // Process the value and send to logger
                 let fizz_buzz_msg = FizzBuzzMessage::new(value);
