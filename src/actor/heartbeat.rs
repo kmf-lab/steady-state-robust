@@ -48,8 +48,8 @@ async fn internal_behavior<A: SteadyActor>(
     // Track restarts for resilience metrics.
     state.restart_count += 1;
     info!(
-        "Heartbeat starting (restart #{}) with count: {}, beats_sent: {}",
-        state.restart_count, state.count, state.beats_sent
+        "Heartbeat starting (restart #{}) with count: {}, beats_sent: {}, rate: {:?}, beats_desired: {}",
+        state.restart_count, state.count, state.beats_sent, rate, beats
     );
 
     let mut heartbeat_tx = heartbeat_tx.lock().await;
