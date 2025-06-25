@@ -48,7 +48,7 @@ fi
 
 # Add project structure section
 {
-    echo '# Lesson 00: Minimum'
+    echo '# Lesson 02: Robust'
     echo ''
     echo '## Project Structure'
     echo ''
