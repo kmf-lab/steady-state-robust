@@ -1,8 +1,6 @@
 use steady_state::*;
 
 /// GeneratorState holds all persistent state for the Generator actor.
-/// All fields are preserved across actor panics and restarts, ensuring
-/// that no data is lost and the generator can resume exactly where it left off.
 pub(crate) struct GeneratorState {
     /// The next value to generate and send.
     pub(crate) value: u64,
