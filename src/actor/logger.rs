@@ -1,4 +1,3 @@
-use std::thread::sleep;
 use steady_state::*;
 use crate::actor::worker::FizzBuzzMessage;
 
@@ -94,7 +93,7 @@ async fn internal_behavior<A: SteadyActor>(
                     state.fizzbuzz_count += 1;
                     info!("Msg {:?} (FizzBuzz total: {})", msg, state.fizzbuzz_count);
                 }
-                FizzBuzzMessage::Value(v) => {
+                FizzBuzzMessage::Value(_v) => {
                     state.value_count += 1;
                     info!("Msg {:?} (Value total: {})", msg, state.value_count);
                 }
@@ -124,6 +123,7 @@ async fn internal_behavior<A: SteadyActor>(
 fn test_logger() -> Result<(), Box<dyn std::error::Error>> {
     use steady_logger::*;
     let _guard = start_log_capture();
+    use std::thread::sleep;
 
     let mut graph = GraphBuilder::for_testing().build(());
     let (fizz_buzz_tx, fizz_buzz_rx) = graph.channel_builder().build();
