@@ -26,8 +26,7 @@ In this lesson, you’ll see:
 
 ```
 Generator → Worker → Logger
-↗
-Heartbeat
+Heartbeat ↗
 ```
 
 - **Generator:** Produces a sequence of numbers, simulates failures, and demonstrates state recovery.
@@ -59,8 +58,8 @@ Heartbeat
 
 ## 🧪 How Does It Work?
 
-- **Persistent State:** Each actor’s state is stored in a special object that survives panics and restarts.
-- **Automatic Restart:** The framework detects panics and restarts the actor, passing it its last state.
+- **Persistent State:** Each actor’s state is stored in a special object held by main that survives panics.
+- **Automatic Restart:** The framework detects panics and restarts the actor, passing it its last state & channels.
 - **Peek-Before-Commit:** Actors use `peek` to look at a message, process it, and only then `take` (commit) it.
 - **Showstopper Handling:** If a message is peeked (but not taken) too many times, it’s considered a “showstopper” and can be dropped or logged for investigation.
 - **Restart Metrics:** Each actor tracks how many times it has restarted, so you can see resilience in action.
