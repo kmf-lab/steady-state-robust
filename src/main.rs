@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cli_args = MainArg::parse();
 
     // Initialize logging at Info level for runtime diagnostics and performance output.
-    let _ = init_logging(LogLevel::Info);
+    init_logging(LogLevel::Info)?;
 
     // Build the actor graph with all channels and actors, using the parsed arguments.
     let mut graph = GraphBuilder::default()
