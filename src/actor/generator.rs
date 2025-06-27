@@ -13,7 +13,7 @@ pub(crate) struct GeneratorState {
 }
 
 /// Entry point for the Generator actor.
-/// This actor demonstrates robust, persistent state and automatic restart.
+/// This actor demonstrates robust, reliable state and automatic restart.
 pub async fn run(
     actor: SteadyActorShadow,
     generated_tx: SteadyTx<u64>,
