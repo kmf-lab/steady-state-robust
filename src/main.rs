@@ -89,7 +89,7 @@ fn build_graph(graph: &mut Graph) {
 #[cfg(test)]
 pub(crate) mod main_tests {
     use steady_state::*;
-    use steady_state::graph_testing::{StageDirection, StageWaitFor};
+    use steady_state::graph_testing::*;
     use crate::actor::worker::FizzBuzzMessage;
     use super::*;
 
