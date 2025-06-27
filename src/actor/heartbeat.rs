@@ -1,7 +1,7 @@
 use steady_state::*;
 
-/// HeartbeatState holds persistent state for the Heartbeat actor.
-/// All fields are preserved across panics and restarts, ensuring
+/// HeartbeatState holds state for the Heartbeat actor.
+/// All fields are preserved across panics, ensuring
 /// that timing and beat counts are never lost.
 pub(crate) struct HeartbeatState {
     /// The current beat count.
@@ -13,7 +13,7 @@ pub(crate) struct HeartbeatState {
 }
 
 /// Entry point for the Heartbeat actor.
-/// Demonstrates robust timing, persistent state, and automatic restart.
+/// Demonstrates robust timing, state, and automatic restart.
 pub async fn run(
     actor: SteadyActorShadow,
     heartbeat_tx: SteadyTx<u64>,
@@ -35,7 +35,7 @@ async fn internal_behavior<A: SteadyActor>(
     heartbeat_tx: SteadyTx<u64>,
     state: SteadyState<HeartbeatState>,
 ) -> Result<(), Box<dyn Error>> {
-    let args = actor.args::<crate::MainArg>().expect("unable to downcast");
+    let args = actor.args::<crate::MainArg>().expect("unable to downcast"); //#!#//
     let rate = Duration::from_millis(args.rate_ms);
     let beats = args.beats;
 
@@ -56,7 +56,7 @@ async fn internal_behavior<A: SteadyActor>(
 
     while actor.is_running(|| heartbeat_tx.mark_closed()) {
         // Wait for both the periodic timer and channel space.
-        await_for_all!(
+        await_for_all!(  //#!#//
             actor.wait_periodic(rate),
             actor.wait_vacant(&mut heartbeat_tx, 1)
         );

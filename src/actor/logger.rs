@@ -2,8 +2,8 @@ use std::thread::sleep;
 use steady_state::*;
 use crate::actor::worker::FizzBuzzMessage;
 
-/// LoggerState holds persistent state for the Logger actor.
-/// All fields are preserved across panics and restarts, ensuring
+/// LoggerState holds state for the Logger actor.
+/// All fields are preserved across panics, ensuring
 /// that no data is lost and the logger can resume exactly where it left off.
 pub(crate) struct LoggerState {
     pub(crate) messages_logged: u64,
@@ -70,14 +70,15 @@ async fn internal_behavior<A: SteadyActor>(
         // --- End Robustness Demonstration ---
 
         // Showstopper detection: if this message has been peeked N times, drop it and log.
-        if actor.is_showstopper(&mut rx, 7) {
+        if actor.is_showstopper(&mut rx, 7) {                           //#!#//
             // This same peeked message caused us to panic 7 times in a row, so we drop it.
+            // we could log it or save it off to another channel.
             actor.try_take(&mut rx).expect("internal error");
             continue; // Back to top of loop
         }
 
         // Peek-before-commit: Only after successful processing do we advance the read position.
-        if let Some(peeked_msg) = actor.try_peek(&mut rx) {
+        if let Some(peeked_msg) = actor.try_peek(&mut rx) {   //#!#//
             let msg = *peeked_msg;
 
             // Process the message (this is our "work" that we don't want to lose)
@@ -101,7 +102,7 @@ async fn internal_behavior<A: SteadyActor>(
             }
 
             // Only after successful processing do we advance the read position
-            let advanced = actor.advance_take_index(&mut rx, 1).item_count();
+            let advanced = actor.advance_take_index(&mut rx, 1).item_count(); //#!#//
             if advanced > 0 {
                 state.messages_logged += 1;
                 trace!(
@@ -123,7 +124,7 @@ async fn internal_behavior<A: SteadyActor>(
 #[test]
 fn test_logger() -> Result<(), Box<dyn std::error::Error>> {
     use steady_logger::*;
-    let _guard = start_log_capture();
+    let _guard = start_log_capture();           //#!#//
 
     let mut graph = GraphBuilder::for_testing().build(());
     let (fizz_buzz_tx, fizz_buzz_rx) = graph.channel_builder().build();
@@ -140,7 +141,7 @@ fn test_logger() -> Result<(), Box<dyn std::error::Error>> {
     sleep(Duration::from_millis(300));
     graph.request_shutdown();
     graph.block_until_stopped(Duration::from_secs(10000))?;
-    assert_in_logs!(["Msg Fizz"]);
+    assert_in_logs!(["Msg Fizz"]);                   //#!#//
 
     Ok(())
 }

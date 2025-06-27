@@ -23,8 +23,8 @@ impl FizzBuzzMessage {
     }
 }
 
-/// WorkerState holds persistent state for the Worker actor.
-/// All fields are preserved across panics and restarts, ensuring
+/// WorkerState holds state for the Worker actor.
+/// All fields are preserved across panics, ensuring
 /// that no data is lost and the worker can resume exactly where it left off.
 pub(crate) struct WorkerState {
     pub(crate) heartbeats_processed: u64,
@@ -42,7 +42,7 @@ pub async fn run(
     logger: SteadyTx<FizzBuzzMessage>,
     state: SteadyState<WorkerState>,
 ) -> Result<(), Box<dyn Error>> {
-    internal_behavior(
+    internal_behavior(                                             //#!#//
         actor.into_spotlight([&heartbeat, &generator], [&logger]),
         heartbeat,
         generator,
@@ -79,7 +79,9 @@ async fn internal_behavior<A: SteadyActor>(
     let mut generator = generator.lock().await;
     let mut logger = logger.lock().await;
 
-    while actor.is_running(|| {
+    // we are using a more complex veto closure so we put eyes on each part with the i! macro which
+    // will capture which expression stopped the shutdown and report it upon unclean shutdown.
+    while actor.is_running(|| {  //#!#//
         i!(heartbeat.is_closed_and_empty())
             && i!(generator.is_closed_and_empty())
             && i!(logger.mark_closed())
@@ -94,7 +96,7 @@ async fn internal_behavior<A: SteadyActor>(
         if clean {
             // Showstopper detection: if this value has been peeked N times, drop it and log.
             const SHOWSTOPPER_THRESHOLD: usize = 7;
-            if actor.is_showstopper(&mut heartbeat, SHOWSTOPPER_THRESHOLD) {
+            if actor.is_showstopper(&mut heartbeat, SHOWSTOPPER_THRESHOLD) {  //#!#//
                 if let Some(value) = actor.try_take(&mut heartbeat) {
                     warn!(
                             "Showstopper detected: value {} has blocked the worker {} times, dropping it.",
@@ -125,7 +127,7 @@ async fn internal_behavior<A: SteadyActor>(
         // Only proceed if we have a heartbeat or if not all conditions were met (to avoid starvation)
         if actor.try_take(&mut heartbeat).is_some() || !clean {
             // Peek at the next generator value (do not take yet)
-            if let Some(&value) = actor.try_peek(&mut generator) {
+            if let Some(&value) = actor.try_peek(&mut generator) { //#!#//
 
 
                 // Process the value and send to logger
@@ -133,7 +135,7 @@ async fn internal_behavior<A: SteadyActor>(
                 match actor.try_send(&mut logger, fizz_buzz_msg) {
                     SendOutcome::Success => {
                         // Only now do we take the value from the generator
-                        let _ = actor.try_take(&mut generator);
+                        actor.try_take(&mut generator).expect("internal error"); //#!#//
                         state.values_processed += 1;
                         state.messages_sent += 1;
                         trace!(

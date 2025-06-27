@@ -122,9 +122,6 @@ Instead, use these patterns—persistent state, peek-before-commit, and automati
 
 ---
 
-## 📚 Further Reading
+When reviewing the source code, look for //#!#// which demonstrate key ideas you need to know.
 
-- [The Actor Model](https://en.wikipedia.org/wiki/Actor_model)
-- [Designing Data-Intensive Applications](https://dataintensive.net/) (see chapters on fault tolerance and recovery)
-- [The Reactive Manifesto](https://www.reactivemanifesto.org/)
 

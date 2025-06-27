@@ -34,10 +34,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 // Actor names for use in graph construction and testing.
-const NAME_HEARTBEAT: &str = "heartbeat";
-const NAME_GENERATOR: &str = "generator";
-const NAME_WORKER: &str = "worker";
-const NAME_LOGGER: &str = "logger";
+const NAME_HEARTBEAT: &str = "HEARTBEAT";
+const NAME_GENERATOR: &str = "GENERATOR";
+const NAME_WORKER: &str = "WORKER";
+const NAME_LOGGER: &str = "LOGGER";
 
 /// Builds the robust actor pipeline and connects all channels.
 /// This function demonstrates the robust architecture:

@@ -1,7 +1,7 @@
 use steady_state::*;
 
-/// GeneratorState holds all persistent state for the Generator actor.
-/// All fields are preserved across actor panics and restarts, ensuring
+/// GeneratorState holds all state for the Generator actor.
+/// All fields are preserved across actor panics, ensuring
 /// that no data is lost and the generator can resume exactly where it left off.
 pub(crate) struct GeneratorState {
     /// The next value to generate and send.
@@ -71,7 +71,7 @@ async fn internal_behavior<A: SteadyActor>(
             let message_to_send = state.value;
 
             // Attempt to send the message.
-            match actor.try_send(&mut generated, message_to_send) {
+            match actor.try_send(&mut generated, message_to_send) { //#!#//
                 SendOutcome::Success => {
                     // Only after a successful send do we update state.
                     state.value += 1;
