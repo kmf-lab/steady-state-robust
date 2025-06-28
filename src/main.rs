@@ -112,6 +112,7 @@ pub(crate) mod main_tests {
         stage_manager.actor_perform(NAME_HEARTBEAT, StageDirection::Echo(100u64))?;
         stage_manager.actor_perform(NAME_LOGGER,    StageWaitFor::Message(FizzBuzzMessage::FizzBuzz
                                                                           , Duration::from_secs(2)))?;
+        // ...
         stage_manager.final_bow();
 
         graph.request_shutdown();

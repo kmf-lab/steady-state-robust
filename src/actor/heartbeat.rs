@@ -42,7 +42,7 @@ async fn internal_behavior<A: SteadyActor>(
     let mut state = state.lock(|| HeartbeatState {
         count: 0,
         beats_sent: 0,
-        restart_count: 0,
+        restart_count: 0, // using this pattern, we can detect our own restarts //#!#//
     }).await;
 
     // Track restarts for resilience metrics.
@@ -70,6 +70,7 @@ async fn internal_behavior<A: SteadyActor>(
             );
             panic!("Intentional panic for robustness demonstration - DO NOT COPY THIS PATTERN!");
         }
+      
         // --- End Robustness Demonstration ---
 
         // Prepare the beat value, attempt to send, then update state only on success.
