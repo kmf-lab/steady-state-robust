@@ -4,11 +4,10 @@ version = "0.1.4"
 edition = "2024"
 
 [dependencies]
-# steady_state     = {verson = "0.2.1", features = ["exec_async_std", "telemetry_server_builtin"]}
-# steady_state     = {verson = "0.2.1", features = ["exec_async_std", "telemetry_server_builtin", "disable_actor_restart_on_failure"]}
+steady_state     = {verson = "0.2.1", features = ["exec_async_std", "telemetry_server_builtin"]}
 
-steady_state     = { path = "../steady-state-stack/core", features = ["exec_async_std", "telemetry_server_builtin"], default-features = false }
-#steady_state     = { path = "../steady-state-stack/core", features = ["exec_async_std", "telemetry_server_builtin", "disable_actor_restart_on_failure"], default-features = false }
+# To failfast use this
+# steady_state     = {verson = "0.2.1", features = ["exec_async_std", "telemetry_server_builtin", "disable_actor_restart_on_failure"]}
 
 clap             = { version = "4.5.36", features = ["derive"] }
 
