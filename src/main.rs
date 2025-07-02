@@ -53,9 +53,10 @@ fn build_graph(graph: &mut Graph) {
     let (generator_tx, generator_rx) = channel_builder.build();
     let (worker_tx, worker_rx) = channel_builder.build();
 
-    // Enable actor restarts for robustness.
-    // The .with_mcpu_avg() call enables tracking of actor CPU usage.
+
     let actor_builder = graph.actor_builder()
+        .with_thread_info()
+        .with_load_avg()
         .with_mcpu_avg();
 
     // Each actor is built as a SoloAct, running on its own thread for maximum failure isolation.

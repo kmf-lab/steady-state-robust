@@ -37,17 +37,17 @@ pub(crate) struct WorkerState {
 /// Demonstrates robust, persistent state, peek-before-commit, and automatic restart.
 pub async fn run(
     actor: SteadyActorShadow,
-    heartbeat: SteadyRx<u64>,
-    generator: SteadyRx<u64>,
-    logger: SteadyTx<FizzBuzzMessage>,
+    heartbeat_rx: SteadyRx<u64>,
+    generator_rx: SteadyRx<u64>,
+    logger_tx: SteadyTx<FizzBuzzMessage>,
     state: SteadyState<WorkerState>,
 ) -> Result<(), Box<dyn Error>> {
     internal_behavior(                                             //#!#//
-        actor.into_spotlight([&heartbeat, &generator], [&logger]),
-        heartbeat,
-        generator,
-        logger,
-        state,
+                                                                   actor.into_spotlight([&heartbeat_rx, &generator_rx], [&logger_tx]),
+                                                                   heartbeat_rx,
+                                                                   generator_rx,
+                                                                   logger_tx,
+                                                                   state,
     )
         .await
 }
@@ -75,66 +75,72 @@ async fn internal_behavior<A: SteadyActor>(
         state.restart_count, state.heartbeats_processed, state.values_processed, state.messages_sent
     );
 
+
     let mut heartbeat = heartbeat.lock().await;
     let mut generator = generator.lock().await;
     let mut logger = logger.lock().await;
 
     // we are using a more complex veto closure so we put eyes on each part with the i! macro which
     // will capture which expression stopped the shutdown and report it upon unclean shutdown.
-    while actor.is_running(|| {  //#!#//
-        i!(heartbeat.is_closed_and_empty())
-            && i!(generator.is_closed_and_empty())
-            && i!(logger.mark_closed())
-    }) {
+    while actor.is_running(
+                            || i!(heartbeat.is_closed_and_empty())
+                            && i!(generator.is_closed_and_empty())
+                            && i!(logger.mark_closed())
+                        ) {
         // Wait for both inputs to have data and logger to have space
         let clean = await_for_all!(
-            actor.wait_avail(&mut heartbeat, 1),
-            actor.wait_avail(&mut generator, 1),
-            actor.wait_vacant(&mut logger, 1)
+                                    actor.wait_avail(&mut heartbeat, 1),
+                                    actor.wait_avail(&mut generator, 1),
+                                    actor.wait_vacant(&mut logger, 1)
         );
 
-        if clean {
-            // Showstopper detection: if this value has been peeked N times, drop it and log.
-            const SHOWSTOPPER_THRESHOLD: usize = 7;
-            if actor.is_showstopper(&mut heartbeat, SHOWSTOPPER_THRESHOLD) {  //#!#//
-                if let Some(value) = actor.try_take(&mut heartbeat) {
-                    warn!(
-                            "Showstopper detected: value {} has blocked the worker {} times, dropping it.",
-                            value, SHOWSTOPPER_THRESHOLD
-                        );
-                    state.values_processed += 1;
-                    continue; // Skip processing, go to the next iteration
-                } else {
-                    panic!("Showstopper detected, but heartbeat is empty!");
-                }
-
-            }
-
-        }
-
-        // --- Robustness Demonstration: Intentional Panic ---
-        // This panic is injected to demonstrate automatic actor restart and state preservation.
-        #[cfg(not(test))]
-        if state.heartbeats_processed == 5 && state.restart_count == 1 {
-            error!(
-                "Worker intentionally panicking after {} heartbeats to demonstrate robustness!",
-                state.heartbeats_processed
-            );
-            panic!("Intentional panic for robustness demonstration - DO NOT COPY THIS PATTERN!");
-        }
-        // --- End Robustness Demonstration ---
+        // if clean {
+        //     // Showstopper detection: if this value has been peeked N times, drop it and log.
+        //
+        // }
 
         // Only proceed if we have a heartbeat or if not all conditions were met (to avoid starvation)
         if actor.try_take(&mut heartbeat).is_some() || !clean {
-            // Peek at the next generator value (do not take yet)
-            if let Some(&value) = actor.try_peek(&mut generator) { //#!#//
+
+            // Peek at the next generator value (do not take yet) !!!!!!!!!!!!!!!
+            if let Some(&value) = actor.try_peek(&mut generator) {               //#!#//
+
+                const SHOWSTOPPER_THRESHOLD: usize = 3;
+                if actor.is_showstopper(&mut generator, SHOWSTOPPER_THRESHOLD) {  //#!#//
+                    if let Some(value) = actor.try_take(&mut generator) {
+                        warn!(
+                            "Showstopper detected: value {} has blocked the worker {} times, dropping it.",
+                            value, SHOWSTOPPER_THRESHOLD
+                        );
+                        state.values_processed += 1;
+                        //  cleared after next peek.
+                       // actor.try_peek(&mut generator);
+                       // assert_eq!(false, actor.is_showstopper(&mut generator, SHOWSTOPPER_THRESHOLD), "showstopper cleared");
+                        continue; // Skip processing, go to the next iteration
+                    } else {
+                        panic!("Showstopper detected, but heartbeat is empty!");
+                    }
+                }
+
+                // --- Robustness Demonstration: Intentional Panic ---
+                // This panic is injected to demonstrate automatic actor restart and state preservation.
+                #[cfg(not(test))]
+                if value == 22  {
+                    error!(
+                            "Worker intentionally panicking after {} heartbeats to demonstrate robustness!",
+                           value
+                        );
+                    panic!("Intentional panic for robustness demonstration - DO NOT COPY THIS PATTERN!");
+                }
+                // --- End Robustness Demonstration ---
+
 
 
                 // Process the value and send to logger
                 let fizz_buzz_msg = FizzBuzzMessage::new(value);
                 match actor.try_send(&mut logger, fizz_buzz_msg) {
                     SendOutcome::Success => {
-                        // Only now do we take the value from the generator
+                        // Only now do we take the value from the generator !!!!!!!!!!!!!!!
                         actor.try_take(&mut generator).expect("internal error"); //#!#//
                         state.values_processed += 1;
                         state.messages_sent += 1;

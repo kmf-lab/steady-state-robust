@@ -32,7 +32,7 @@ pub async fn run(
 /// State is always updated only after a successful send, ensuring no duplicate or lost messages.
 async fn internal_behavior<A: SteadyActor>(
     mut actor: A,
-    generated: SteadyTx<u64>,
+    generated_tx: SteadyTx<u64>,
     state: SteadyState<GeneratorState>,
 ) -> Result<(), Box<dyn Error>> {
     // Lock the persistent state for this actor instance.
@@ -41,16 +41,16 @@ async fn internal_behavior<A: SteadyActor>(
         messages_sent: 0,
         panic_counter: 0,
     }).await;
-    let mut generated = generated.lock().await;
+    let mut generated_tx = generated_tx.lock().await;
 
     info!(
         "Generator starting with value: {}, messages_sent: {}",
         state.value, state.messages_sent
     );
 
-    while actor.is_running(|| generated.mark_closed()) {
+    while actor.is_running(|| generated_tx.mark_closed()) {
         // Wait for room in the channel before attempting to send.
-        await_for_all!(actor.wait_vacant(&mut generated, 1));
+        await_for_all!(actor.wait_vacant(&mut generated_tx, 1));
 
         // --- Robustness Demonstration: Intentional Panic ---
         // This panic is injected to demonstrate automatic actor restart and state preservation.
@@ -66,12 +66,11 @@ async fn internal_behavior<A: SteadyActor>(
         }
         // --- End Robustness Demonstration ---
 
-        // Peek-before-commit: Only update state after a successful send.
-        if !actor.is_full(&mut generated) {
+        if !actor.is_full(&mut generated_tx) {
             let message_to_send = state.value;
 
             // Attempt to send the message.
-            match actor.try_send(&mut generated, message_to_send) { //#!#//
+            match actor.try_send(&mut generated_tx, message_to_send) { //#!#//
                 SendOutcome::Success => {
                     // Only after a successful send do we update state.
                     state.value += 1;

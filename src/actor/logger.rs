@@ -1,4 +1,3 @@
-use std::thread::sleep;
 use steady_state::*;
 use crate::actor::worker::FizzBuzzMessage;
 
@@ -58,28 +57,30 @@ async fn internal_behavior<A: SteadyActor>(
     while actor.is_running(|| rx.is_closed_and_empty()) {
         await_for_all!(actor.wait_avail(&mut rx, 1));
 
-        // --- Robustness Demonstration: Intentional Panic ---
-        #[cfg(not(test))]
-        if state.messages_logged == 3 && state.restart_count == 1 {
-            error!(
-                "Logger intentionally panicking after {} messages to demonstrate robustness!",
-                state.messages_logged
-            );
-            panic!("Intentional panic for robustness demonstration - DO NOT COPY THIS PATTERN!");
-        }
-        // --- End Robustness Demonstration ---
 
         // Showstopper detection: if this message has been peeked N times, drop it and log.
-        if actor.is_showstopper(&mut rx, 7) {                           //#!#//
+        if actor.is_showstopper(&mut rx, 3) {                           //#!#//
             // This same peeked message caused us to panic 7 times in a row, so we drop it.
             // we could log it or save it off to another channel.
             actor.try_take(&mut rx).expect("internal error");
             continue; // Back to top of loop
         }
+     
 
         // Peek-before-commit: Only after successful processing do we advance the read position.
         if let Some(peeked_msg) = actor.try_peek(&mut rx) {   //#!#//
             let msg = *peeked_msg;
+
+            // --- Robustness Demonstration: Intentional Panic ---
+            #[cfg(not(test))]
+            if FizzBuzzMessage::Value(2).eq(peeked_msg) {
+                error!(
+                        "Logger intentionally panicking at {:?} messages to demonstrate robustness!", msg
+                    );
+                panic!("Intentional panic for robustness demonstration - DO NOT COPY THIS PATTERN!");
+            }
+            // --- End Robustness Demonstration ---
+
 
             // Process the message (this is our "work" that we don't want to lose)
             match msg {
@@ -95,7 +96,7 @@ async fn internal_behavior<A: SteadyActor>(
                     state.fizzbuzz_count += 1;
                     info!("Msg {:?} (FizzBuzz total: {})", msg, state.fizzbuzz_count);
                 }
-                FizzBuzzMessage::Value(v) => {
+                FizzBuzzMessage::Value(_v) => {
                     state.value_count += 1;
                     info!("Msg {:?} (Value total: {})", msg, state.value_count);
                 }
@@ -138,7 +139,7 @@ fn test_logger() -> Result<(), Box<dyn std::error::Error>> {
 
     graph.start();
     fizz_buzz_tx.testing_send_all(vec![FizzBuzzMessage::Fizz],true);
-    sleep(Duration::from_millis(300));
+    std::thread::sleep(Duration::from_millis(300));
     graph.request_shutdown();
     graph.block_until_stopped(Duration::from_secs(10000))?;
     assert_in_logs!(["Msg Fizz"]);                   //#!#//
