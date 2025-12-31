@@ -15,22 +15,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Parse command-line arguments (rate, beats, etc.) using clap.
     let cli_args = MainArg::parse();
 
-    // Initialize logging at Info level for runtime diagnostics and performance output.
-    init_logging(LogLevel::Info)?;
+    SteadyRunner::release_build()
+        .with_logging(LogLevel::Info)
+        .with_telemetry_rate_ms(200) // slower telemetry frame rate, //##!##//
+        .run(cli_args, move |mut graph| {
 
-    // Build the actor graph with all channels and actors, using the parsed arguments.
-    let mut graph = GraphBuilder::default()
-        .build(cli_args);
+            // Construct the full actor pipeline and channel topology.
+            build_graph(&mut graph);
 
-    // Construct the full actor pipeline and channel topology.
-    build_graph(&mut graph);
+            // Start the entire actor system. All actors and channels are now live.
+            graph.start();
 
-    // Start the entire actor system. All actors and channels are now live.
-    graph.start();
+            // The system runs until an actor requests shutdown or the timeout is reached.
+            // The timeout here is set to allow for robust failure/recovery demonstration.
+            graph.block_until_stopped(Duration::from_secs(1))
+        })
 
-    // The system runs until an actor requests shutdown or the timeout is reached.
-    // The timeout here is set to allow for robust failure/recovery demonstration.
-    graph.block_until_stopped(Duration::from_secs(1))
 }
 
 // Actor names for use in graph construction and testing.
@@ -99,25 +99,29 @@ pub(crate) mod main_tests {
     #[test]
     fn graph_test() -> Result<(), Box<dyn Error>> {
 
-        let mut graph = GraphBuilder::for_testing()
-            .build(MainArg::default());
+        SteadyRunner::test_build()
+            .with_logging(LogLevel::Info)
+            .with_telemetry_rate_ms(200) // slower telemetry frame rate, //##!##//
+            .run((), move |mut graph| {
+                build_graph(&mut graph);
+                graph.start();
 
-        build_graph(&mut graph);
-        graph.start();
+                // Stage management provides orchestrated testing of multi-actor scenarios.
+                // This enables precise control over actor behavior and verification of
+                // complex system interactions without manual coordination complexity.
+                let stage_manager = graph.stage_manager();
+                stage_manager.actor_perform(NAME_GENERATOR, StageDirection::Echo(15u64))?;
+                stage_manager.actor_perform(NAME_HEARTBEAT, StageDirection::Echo(100u64))?;
+                stage_manager.actor_perform(NAME_LOGGER,    StageWaitFor::Message(FizzBuzzMessage::FizzBuzz
+                                                                                  , Duration::from_secs(2)))?;
+                // ...
+                stage_manager.final_bow();
 
-        // Stage management provides orchestrated testing of multi-actor scenarios.
-        // This enables precise control over actor behavior and verification of
-        // complex system interactions without manual coordination complexity.
-        let stage_manager = graph.stage_manager();
-        stage_manager.actor_perform(NAME_GENERATOR, StageDirection::Echo(15u64))?;
-        stage_manager.actor_perform(NAME_HEARTBEAT, StageDirection::Echo(100u64))?;
-        stage_manager.actor_perform(NAME_LOGGER,    StageWaitFor::Message(FizzBuzzMessage::FizzBuzz
-                                                                          , Duration::from_secs(2)))?;
-        // ...
-        stage_manager.final_bow();
+                graph.request_shutdown();
 
-        graph.request_shutdown();
+                graph.block_until_stopped(Duration::from_secs(5))
+            })
 
-        graph.block_until_stopped(Duration::from_secs(5))
+
     }
 }
