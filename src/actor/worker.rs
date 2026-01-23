@@ -125,7 +125,7 @@ async fn internal_behavior<A: SteadyActor>(
                 // --- Robustness Demonstration: Intentional Panic ---
                 // This panic is injected to demonstrate automatic actor restart and state preservation.
                 #[cfg(not(test))]
-                if value == 22  {
+                if value == 33  {
                     error!(
                             "Worker intentionally panicking after {} heartbeats to demonstrate robustness!",
                            value

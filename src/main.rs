@@ -61,12 +61,14 @@ fn build_graph(graph: &mut Graph) {
 
     // Each actor is built as a SoloAct, running on its own thread for maximum failure isolation.
     // Each actor's state is persistent and survives restarts.
+    let mut shared_troupe = graph.actor_troupe();
+
 
     let state = new_state();
     actor_builder.with_name(NAME_HEARTBEAT)
         .build(move |context|
             actor::heartbeat::run(context, heartbeat_tx.clone(), state.clone())
-        , SoloAct);
+        , MemberOf(&mut shared_troupe));
 
     let state = new_state();
     actor_builder.with_name(NAME_GENERATOR)
@@ -84,7 +86,7 @@ fn build_graph(graph: &mut Graph) {
     actor_builder.with_name(NAME_LOGGER)
         .build(move |context| 
             actor::logger::run(context, worker_rx.clone(), state.clone())
-        , SoloAct);
+        , MemberOf(&mut shared_troupe)); //same troupe as heartbeat
 }
 
 #[cfg(test)]
@@ -117,7 +119,7 @@ pub(crate) mod main_tests {
                 // ...
                 stage_manager.final_bow();
 
-                graph.request_shutdown();
+                graph.request_shutdown(); //essential for test to finish
 
                 graph.block_until_stopped(Duration::from_secs(5))
             })

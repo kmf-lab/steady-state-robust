@@ -58,7 +58,7 @@ async fn internal_behavior<A: SteadyActor>(
         await_for_all!(actor.wait_avail(&mut rx, 1));
 
 
-        // Showstopper detection: if this message has been peeked N times, drop it and log.
+        // // Showstopper detection: if this message has been peeked N times, drop it and log.
         if actor.is_showstopper(&mut rx, 3) {                           //#!#//
             // This same peeked message caused us to panic 7 times in a row, so we drop it.
             // we could log it or save it off to another channel.
@@ -73,7 +73,7 @@ async fn internal_behavior<A: SteadyActor>(
 
             // --- Robustness Demonstration: Intentional Panic ---
             #[cfg(not(test))]
-            if FizzBuzzMessage::Value(2).eq(peeked_msg) {
+            if FizzBuzzMessage::Value(41).eq(peeked_msg) {
                 error!(
                         "Logger intentionally panicking at {:?} messages to demonstrate robustness!", msg
                     );
@@ -106,6 +106,7 @@ async fn internal_behavior<A: SteadyActor>(
             let advanced = actor.advance_take_index(&mut rx, 1).item_count(); //#!#//
             if advanced > 0 {
                 state.messages_logged += 1;
+
                 trace!(
                     "Logger advanced read position, total messages: {}",
                     state.messages_logged

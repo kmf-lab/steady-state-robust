@@ -8,7 +8,7 @@ pub(crate) struct MainArg {
     pub(crate) rate_ms: u64,
 
     /// Number of beats (loop iterations before shutdown)
-    #[arg(short = 'b', long = "beats", default_value = "60")]
+    #[arg(short = 'b', long = "beats", default_value = "120")]
     pub(crate) beats: u64,
 }
 
@@ -16,7 +16,7 @@ impl Default for MainArg {
     fn default() -> Self {
         MainArg {
             rate_ms: 1000,
-            beats: 60,
+            beats: 120,
         }
     }
 }
