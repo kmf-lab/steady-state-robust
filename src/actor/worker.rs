@@ -156,6 +156,8 @@ async fn internal_behavior<A: SteadyActor>(
                         // Do not take the value, so we will try again next loop
                         continue;
                     }
+                    SendOutcome::Timeout(_) => {continue;}
+                    SendOutcome::Closed(_) => {continue;}
                 }
             }
 

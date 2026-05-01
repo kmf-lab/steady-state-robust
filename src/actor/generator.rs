@@ -85,6 +85,8 @@ async fn internal_behavior<A: SteadyActor>(
                     // Channel became full, try again next loop.
                     continue;
                 }
+                SendOutcome::Timeout(_) => {continue;}
+                SendOutcome::Closed(_) => {continue;}
             }
         }
     }
